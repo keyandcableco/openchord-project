@@ -74,7 +74,7 @@ The current plan uses MMBT3906 PNP transistors on the four tone outputs. Whether
 | 22 | JP1: flat/sharp select | — |
 | 23 | JP2: Barry Harris | — |
 | 26 | Tuning ADC | — |
-| 27 | MIDI TX (optional) | — |
+| 20 | MIDI TX (optional, UART1 alt pin) | 18 (F#, unwired in OM-27) |
 
 ### CD4520 adapter boards
 
@@ -113,6 +113,8 @@ openchord/
 ---
 
 ## If you want to help
+
+The most useful thing right now would be someone with an OM-27, a scope, and some patience verifying the output stage behaviour — specifically whether the existing PCB pulldown resistors on the AY output pins will fight a 3.3V GPIO signal, or whether direct connection might actually work without transistors. That determines a lot of the hardware design.
 
 If you have a different instrument with a dead chord IC and want to add support for it, see `docs/contributing.md`.
 

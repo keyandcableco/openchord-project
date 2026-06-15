@@ -42,11 +42,13 @@ def note_freq(note_index, octave, a4=440.0):
 
 def read_tuning_adc(gpio, samples=8):
     """
-    Read a trim pot on the given ADC-capable GPIO.
-    Maps 0-65535 ADC range to TUNING_MIN_HZ-TUNING_MAX_HZ.
+    Optional: read a trim pot on an ADC-capable GPIO for variable tuning.
+    Maps 0-65535 ADC range to TUNING_MIN_HZ-TUNING_MAX_HZ (432-448 Hz).
     Averages multiple reads to reduce noise.
-    Returns A4 frequency in Hz.
-    Leave pin unconnected for approximately 440 Hz (mid-range pull-up).
+
+    Not used by the OM-27 implementation — tuning is set as a constant
+    in config.py (TUNING_A4_HZ). This function is available for instruments
+    that want hardware tuning control.
     """
     adc = ADC(Pin(gpio))
     raw = sum(adc.read_u16() for _ in range(samples)) // samples
