@@ -36,7 +36,7 @@ Currently:
 | M083A | Top-octave generator | Frequencies generated in PIO from internal clock |
 | 4069 | RC clock oscillator for M083A | No longer needed; its 78L05 power supply gets stolen for VBUS |
 | 4001 | NOR gate for bass routing | Logic moved into firmware |
-| M747 ×2 | Octave dividers | Intended to be replaced by CD4520 adapter boards — **unverified** |
+| M747 ×2 | Octave dividers | Replaced by CD4520 adapter boards (passive pin translation) — **unverified** |
 
 The AY-5-1315 (rhythm chip), 4011 (percussion), and all downstream audio circuitry are left alone.
 
@@ -53,32 +53,69 @@ The original hardware supported major, minor, and dominant 7th. The firmware add
 
 ### Hardware approach (unverified)
 
-The OM-27 uses a center-negative battery supply — the center tap is 0V/GND, and logic HIGH in the original circuit means pulling toward ground, not toward the positive rail. This has significant implications for output transistor selection. See `docs/center-negative.md`.
+The OM-27 runs on +12V and +5V rails only (no negative rail). The AY-5-1317A is
+P-channel MOS, almost certainly wired with VSS=+12V and VDD=GND — the standard
+approach for running P-channel ICs on a positive supply. Logic HIGH = +12V,
+logic LOW = GND. This is consistent with pin 5 (reset) sitting at +12V at rest
+and being triggered by grounding it.
 
-The current plan uses MMBT3906 PNP transistors on the four tone outputs. Whether this actually works, and whether direct GPIO connection might work instead, is something that needs to be verified with a scope before committing to a PCB layout.
+The current plan uses NPN MMBT3904 transistors on the five tone outputs,
+open-collector pulling up to +12V. Worth trying direct GPIO connection first on
+the bench — 3.3V may register as a valid HIGH on a 12V CMOS input. See
+`docs/center-negative.md` for full details.
+
+The AY-5-1315 bass-select outputs swing to +12V and require voltage dividers
+(68kΩ + 33kΩ) before connecting to RP2350 GPIOs.
+
+**RP2350 Errata 9:** PULL_DOWN is unreliable on floating GPIO pins. The key
+matrix uses PULL_UP with rows driven LOW instead — already handled in firmware.
 
 ### GPIO map (proposed, unverified)
 
 | GPIO | Function | AY-5-1317A pin |
 |---|---|---|
-| 0 | ROOT → CD4520 #1 | 31 |
-| 1 | 3RD  → CD4520 #1 | 29 |
-| 2 | 5TH  → CD4520 #2 | 32 |
-| 3 | BASS → CD4520 #2 | 34 |
-| 4–6 | Row drive: Maj/Min/7th | 12, 9, 7 |
-| 7–15 | Col sense: Eb Bb F C G D A E B | 2,3,4,6,8,10,11,38,39 |
-| 16 | Power enable | — |
-| 17 | Memory switch | 35 |
-| 18 | Modifier button (was reset) | 5 |
-| 19–21 | Bass select from AY-5-1315 | 25, 26, 27 |
-| 22 | JP1: flat/sharp select | — |
-| 23 | JP2: Barry Harris | — |
-| 26 | Tuning ADC | — |
-| 20 | MIDI TX (optional, UART1 alt pin) | 18 (F#, unwired in OM-27) |
+| 0 | ROOT output → CD4520 #1 clock A | 31 |
+| 1 | 3RD output  → CD4520 #1 clock B | 29 |
+| 2 | 5TH output  → CD4520 #2 clock A | 28 |
+| 3 | 7TH output  → CD4520 #2 clock B | 32 (silent on non-7th chords) |
+| 4 | MO output (auto-bass) | 34 |
+| 5 | 7th Select drive (LOW = 7th active) | 33 |
+| 6 | Row drive: Major | 11 + 12 (tie both pads together) |
+| 7 | Row drive: Minor | 9 + 10 |
+| 8 | Row drive: Seventh | 7 + 8 |
+| 9 | Col sense: C  | 24 |
+| 10 | Col sense: C# | 23 |
+| 11 | Col sense: D  | 22 |
+| 12 | Col sense: D# | 21 |
+| 13 | Col sense: E  | 20 |
+| 14 | Col sense: F  | 19 |
+| 15 | Col sense: F# | 18 (NC — no button in OM-27) |
+| 16 | Col sense: G  | 17 |
+| 17 | Col sense: G# | 16 (NC — no button in OM-27) |
+| 18 | Col sense: A  | 15 |
+| 19 | Col sense: A# | 14 (NC — no button in OM-27) |
+| 20 | Col sense: B / MIDI TX | 13 / UART1 alt TX |
+| 21 | Power enable | — |
+| 22 | Any Key Down drive | 30 |
+| 23 | Memory switch input | 35 |
+| 24 | Modifier button input (was reset) | 5 |
+| 25 | Bass select B3 from AY-5-1315 | 25 (needs 68k+33k level shift) |
+| 26 | Bass select B2 from AY-5-1315 | 26 (needs 68k+33k level shift) |
+| 27 | Bass select B1 from AY-5-1315 | 27 (needs 68k+33k level shift) |
+| 28 | JP1: flat/sharp select | — |
+| 29 | JP2: Barry Harris mode | — |
+
+AY-5-1317A pins 1 (VSS), 2 (VDD), 3 (C1), 4 (OSC), 6 (m Sel), 36–40
+are not connected to the RP2350 — VSS and VDD go to the supply rails,
+OSC is unused (no external clock needed), and the others need PCB trace
+investigation to determine if they connect to anything downstream.
 
 ### CD4520 adapter boards
 
-The M747 is a 14-pin dual 7-stage divider. The CD4520 is a 16-pin dual 4-stage binary counter that should be functionally equivalent for the OM-27's purposes (only the first three divide stages are used). The plan is a passive adapter board in each M747 socket — just pin translation, no active components.
+The M747 is a 14-pin dual 7-stage divider. The CD4520 is a 16-pin dual
+4-stage binary counter that should be functionally equivalent for the OM-27's
+purposes (only the first three divide stages are used). The plan is a passive
+adapter board in each M747 socket — just pin translation, no active components.
 
 This is theoretically straightforward but hasn't been built or tested.
 
