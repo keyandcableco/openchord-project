@@ -62,7 +62,7 @@ def _freq_gen_normal():
 # Idle HIGH (PNP off = output silent).
 # set(pins,0) = GPIO LOW  = PNP ON  = output pulled to GND (logic HIGH)
 # set(pins,1) = GPIO HIGH = PNP OFF = output pulled to neg rail (logic LOW)
-@rp2.asm_pio(set_init=rp2.PIO.OUT_HIGH)
+@rp2.asm_pio(set_init=rp2.PIO.OUT_LOW)
 def _freq_gen_inverted():
     pull(noblock)
     mov(y, osr)

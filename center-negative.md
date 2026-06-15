@@ -1,87 +1,73 @@
-# Center-negative power supplies in vintage chord instruments
+# Power supply and output logic in vintage chord instruments
 
-This is the single most dangerous gotcha when adapting OpenChord to a new instrument. Read this before wiring anything.
+## Center-negative barrel jacks
 
-## What is a center-negative supply?
+Some vintage instruments use a center-negative DC power supply — meaning the
+center pin of the barrel connector is GND and the outer ring is the positive
+supply voltage. This is the opposite of the more common center-positive
+convention used by most modern gear (Boss pedals, for example, are
+center-negative; most cheap wall warts are center-positive).
 
-Many vintage portable electronic instruments (Omnichords, early Casios, some Yamaha organs) run on batteries wired in a split configuration:
+The Omnichord OM-27 uses a center-negative 12V supply. This is just a
+connector wiring convention and does not imply anything unusual about the
+internal circuit logic.
 
-```
-(+) terminal  ─────────────────  +6V rail
-                                      │
-                                 instrument
-                                   circuits
-                                      │
-Center tap   ─────────────────   0V / GND
-                                      │
-                                 instrument
-                                   circuits
-                                      │
-(−) terminal  ─────────────────  −6V rail
-```
+## OM-27 internal logic levels (unverified, needs scope confirmation)
 
-The center tap between two battery packs becomes the ground reference (0V). The positive terminal sits above it and the negative terminal sits below.
+Internally the OM-27 appears to use conventional positive-supply logic:
+- Logic HIGH = ~11-12V (toward positive rail)
+- Logic LOW  = GND
 
-## Why does this matter?
+Evidence for this: pin 5 of the AY-5-1317A (reset/mute) sits at 11-12V at
+rest and is activated by grounding it — standard active-low behaviour on a
+positive supply.
 
-In a conventional positive-supply digital circuit:
-- Logic HIGH = positive supply voltage (+5V, +3.3V, etc.)
-- Logic LOW  = GND (0V)
+The output pins (29, 31, 32, 34) are assumed to behave similarly, but this
+needs to be verified with an oscilloscope before committing to a PCB layout.
+Specifically:
+- Are the resistors on those output pins pullups to 12V or pulldowns to GND?
+- What voltage swing does the AY-5-1317A actually produce on those pins?
+- What logic threshold do the M747/CD4520 inputs require?
 
-In a center-negative circuit:
-- Logic HIGH = center tap (0V in battery terms)
-- Logic LOW  = negative rail (−6V in battery terms)
+## Output transistors
 
-**The RP2350's GND and the instrument's center tap are the same node.** A GPIO driven HIGH (+3.3V) is actually ABOVE the center tap, which the instrument's ICs may interpret as an over-voltage condition, not a logic level.
-
-A GPIO driven LOW (0V, same as center tap) is the instrument's logic HIGH.
-
-This is completely backwards from what you'd expect.
-
-## What the original ICs did
-
-The AY-5-1317A's output pins pulled toward the center tap (logic HIGH) when active, and floated or were pulled toward the negative rail (logic LOW) when inactive. The pulldown resistors visible on the output pins in the schematic pull toward the negative rail, providing the LOW state.
-
-## How OpenChord handles this
-
-OpenChord uses **PNP transistors (MMBT3906)** on all tone outputs in center-negative mode:
+Based on the above, NPN transistors (MMBT3904) in open-collector configuration
+are the working assumption for the tone outputs:
 
 ```
-RP2350 GPIO ──── 1kΩ ──── MMBT3906 base
-                           MMBT3906 emitter ──── GND (center tap)
-                           MMBT3906 collector ──── output ──── instrument circuit
+RP2350 GPIO ──── 1kΩ ──── MMBT3904 base
+                           MMBT3904 emitter ──── GND
+                           MMBT3904 collector ──── output to CD4520 clock
                                                        │
                                                      10kΩ
                                                        │
-                                                  negative rail
+                                                    +12V rail
 ```
 
-- GPIO LOW  → PNP base pulled toward emitter (GND) → transistor ON  → collector pulled to GND (center tap) → **instrument sees logic HIGH** ✓
-- GPIO HIGH → PNP reverse biased → transistor OFF → collector pulled to negative rail via 10kΩ → **instrument sees logic LOW** ✓
+- GPIO HIGH → transistor ON  → collector pulled to GND     (logic LOW)
+- GPIO LOW  → transistor OFF → collector pulled to 12V via 10kΩ (logic HIGH)
 
-The PIO program is also inverted to match:
-- `set(pins, 0)` (GPIO LOW)  = active half of square wave (logic HIGH to instrument)
-- `set(pins, 1)` (GPIO HIGH) = inactive half (logic LOW to instrument)
-- Idle state: `set_init=OUT_HIGH` = GPIO HIGH = transistor OFF = outputs silent
+It's also possible that direct GPIO connection (3.3V into a 12V logic input)
+might work without transistors, depending on what threshold the CD4520 inputs
+actually need. Worth trying on the bench before adding transistors.
 
-Set `CENTER_NEGATIVE = True` in your instrument config and pass `invert=True` to `init_sm()`.
+## The Hammond X-5: a genuinely different case
 
-## The Hammond X-5: a harder case
+The Hammond X-5 uses a multi-rail negative supply (GND, -18V, -25V, -33V)
+where signals actually swing to negative voltages. This is a substantially
+more complex interfacing problem. Filip Kindt's write-up at
+https://www.cctv.fm/post/rp2040-tog covers the AC coupling and bias network
+needed for the clock input, and the transistor arrangement for the outputs.
 
-The Hammond X-5 is more complex. It uses a **multi-rail negative supply** (GND, −18V, −25V, −33V) where signals swing down to negative voltages rather than floating around a center tap. The clock input in particular swings to −18V, which requires:
+If you're working on an X-5, read that first.
 
-- AC coupling (series capacitor) before the GPIO
-- A bias resistor network to hold the signal near 0V at rest
-- Protection diodes to clamp any over-voltage
+## General advice
 
-Filip Kindt's write-up at https://www.cctv.fm/post/rp2040-tog covers this in detail with a working schematic for the X-5.
+Before wiring any RP2350 GPIO to a vintage instrument's IC pins:
+1. Measure the supply voltage on the IC's VDD pin
+2. Scope an output pin while the instrument is running to see the actual voltage swing
+3. Check input pin voltages at rest and when active
+4. Make sure nothing exceeds 3.3V before it reaches a GPIO
 
-## How to determine your instrument's supply configuration
-
-1. Measure voltage between the negative battery terminal and the center tap (if there is one). If it reads roughly half the total battery voltage, you have a center-negative supply.
-
-2. With the instrument powered on, measure the logic HIGH voltage on an output pin of the chord IC relative to the circuit board's ground plane. If it's near 0V, the circuit's "ground" is not the same as logic LOW.
-
-3. Check whether the IC's VDD pin connects to a positive rail or to a center tap. The datasheet (if you can find it) will clarify the intended supply configuration.
-
-When in doubt, post your measurements in an issue before wiring anything to a GPIO.
+When in doubt, use a voltage divider or level shifter rather than connecting
+directly. RP2350 GPIOs are not 5V tolerant, let alone 12V tolerant.
