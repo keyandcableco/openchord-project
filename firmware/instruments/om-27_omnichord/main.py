@@ -15,7 +15,7 @@ from machine import Pin
 import utime
 
 import config
-from freq_gen import init_sm, set_freq, silence, SILENT, pio_counter
+from freq_gen import init_sm, set_freq, silence, SILENT
 from tuning import build_note_counters, print_frequency_table
 from chord_logic import (
     init_matrix, scan_matrix, resolve_chord, build_voicings,
@@ -40,38 +40,23 @@ note_counters  = build_note_counters(a4_hz, octave=config.TUNING_OCTAVE)
 print_frequency_table(a4_hz, octave=config.TUNING_OCTAVE)
 
 # Solder jumpers — read once at boot
-_sharp_mode    = (Pin(config.GPIO_JP1_SHARP,         Pin.IN, Pin.PULL_UP).value() == 0)
-_barry_harris  = (Pin(config.GPIO_JP2_BARRY_HARRIS,  Pin.IN, Pin.PULL_UP).value() == 0)
+_sharp_mode    = (Pin(config.GPIO_JP1_SHARP,        Pin.IN, Pin.PULL_UP).value() == 0)
+_barry_harris  = (Pin(config.GPIO_JP2_BARRY_HARRIS, Pin.IN, Pin.PULL_UP).value() == 0)
 _modifier_mode = 'sharp' if _sharp_mode else 'flat'
+CHORD_VOICING  = build_voicings(_barry_harris)
 
 # Runtime control pins
-# Modifier (was reset/mute, AY pin 5): active LOW — sits at +12V at rest,
-# grounding triggers it. PULL_UP so floating = not active.
-modifier_pin = Pin(config.GPIO_RES,    Pin.IN, Pin.PULL_UP)
+modifier_pin = Pin(config.GPIO_RES,    Pin.IN, Pin.PULL_UP)   # active LOW
+memory_pin   = Pin(config.GPIO_MEMORY, Pin.IN, Pin.PULL_DOWN) # active HIGH
 
-# Memory/sustain (AY pin 35): active HIGH in original IC (logic 1 = memory on).
-# The existing switch connects this pin to +12V when closed.
-# Use PULL_DOWN so floating (switch open) = memory off.
-memory_pin   = Pin(config.GPIO_MEMORY, Pin.IN, Pin.PULL_DOWN)
+# Any Key Down output (AY pin 30)
+ak_pin = Pin(config.GPIO_AK, Pin.OUT, value=0)
 
-# Any Key Down (AY pin 30): optional, output from AY-5-1317A in original.
-# Check whether this connects to downstream circuitry on your PCB.
-# If it does, we need to drive it. If it's just informational, skip it.
-# For now, configure as output and drive it ourselves.
-if config.GPIO_AK is not None:
-    ak_pin = Pin(config.GPIO_AK, Pin.OUT, value=0)
-else:
-    ak_pin = None
-
-# 7th Select (AY pin 33): ground to enable 7th output on pin 32.
-# We drive this LOW when a 7th chord is active.
+# 7th Select (AY pin 33): LOW = 7th output enabled
 sel7_pin = Pin(config.GPIO_7SEL, Pin.OUT, value=1)  # start HIGH = 7th off
 
 # Key matrix
 row_pins, col_pins = init_matrix(config.MATRIX_ROW_PINS, config.MATRIX_COL_PINS)
-
-# Chord voicings
-CHORD_VOICING = build_voicings(_barry_harris)
 
 # Auto-bass (MO output) reader
 get_mo = build_auto_bass_reader(
@@ -82,15 +67,13 @@ get_mo = build_auto_bass_reader(
 )
 
 # Tone output state machines (NPN open-collector, non-inverted)
-# SILENT = GPIO LOW permanently = transistor OFF = output pulled to +12V
-# = DC HIGH to M747/CD4520 = no clocking = silence
 sm_root = init_sm(0, config.GPIO_ROOT, invert=False)
 sm_3rd  = init_sm(1, config.GPIO_3RD,  invert=False)
 sm_5th  = init_sm(2, config.GPIO_5TH,  invert=False)
 sm_7th  = init_sm(3, config.GPIO_7TH,  invert=False)
 sm_mo   = init_sm(4, config.GPIO_MO,   invert=False)
 
-# MIDI (optional — GPIO 20, UART1 TX alternate pin)
+# MIDI (optional — harmless if GPIO_MIDI_TX pin unconnected)
 if config.GPIO_MIDI_TX is not None:
     midi = MidiOut(tx_gpio=config.GPIO_MIDI_TX, channel=0)
 else:
@@ -105,6 +88,7 @@ print("A4={:.2f}Hz  modifier={}  BH={}  memory={}".format(
 
 # =============================================================================
 # Startup jingle
+# Encodes current settings as note choices — see config.py for mapping.
 # =============================================================================
 
 def play_note(note, duration_ms):
@@ -120,15 +104,15 @@ def play_note(note, duration_ms):
 
 def startup_jingle():
     seq = [
-        (config.JINGLE_BOOT,                              150),
-        (config.JINGLE_FLAT  if _modifier_mode == 'flat'
-         else config.JINGLE_SHARP if _modifier_mode == 'sharp'
-         else config.JINGLE_NORMAL,                       150),
+        (config.JINGLE_BOOT,                                   150),
+        (config.JINGLE_FLAT   if _modifier_mode == 'flat' else
+         config.JINGLE_SHARP  if _modifier_mode == 'sharp' else
+         config.JINGLE_NORMAL,                                 150),
         (config.JINGLE_BH_ON  if _barry_harris  else
-         config.JINGLE_BH_OFF,                            150),
+         config.JINGLE_BH_OFF,                                 150),
         (config.JINGLE_MEM_ON if _memory_on     else
-         config.JINGLE_MEM_OFF,                           150),
-        (config.JINGLE_TUNING,                            300),
+         config.JINGLE_MEM_OFF,                                150),
+        (config.JINGLE_TUNING,                                 300),
     ]
     for note, dur in seq:
         play_note(note, dur)
@@ -139,17 +123,40 @@ print("Running.")
 
 
 # =============================================================================
+# MIDI helpers
+# =============================================================================
+
+def _midi_chord_on(voices):
+    root_n, third_n, fifth_n, seventh_n, mo_n = voices
+    midi.note_on(midi._midi(mo_n,    2), 90)
+    midi.note_on(midi._midi(root_n,  4), 100)
+    midi.note_on(midi._midi(third_n, 4), 95)
+    midi.note_on(midi._midi(fifth_n, 4), 95)
+    if seventh_n is not None:
+        midi.note_on(midi._midi(seventh_n, 4), 90)
+
+def _midi_chord_off(voices):
+    root_n, third_n, fifth_n, seventh_n, mo_n = voices
+    midi.note_off(midi._midi(mo_n,    2))
+    midi.note_off(midi._midi(root_n,  4))
+    midi.note_off(midi._midi(third_n, 4))
+    midi.note_off(midi._midi(fifth_n, 4))
+    if seventh_n is not None:
+        midi.note_off(midi._midi(seventh_n, 4))
+
+
+# =============================================================================
 # Main loop
 # =============================================================================
 
 last_chord  = None    # (root, chord_type, slash_bass)
-last_mo     = None    # last MO note index (for hold/no-change behaviour)
-active_midi = None    # (root, third, fifth, seventh, mo) for MIDI note-off
+last_mo     = None    # last MO note for hold behaviour
+active_midi = None    # currently sounding MIDI voices for note-off
 
 while True:
 
-    # Read modifier button
-    modifier_held = (modifier_pin.value() == 0)   # active LOW
+    # Read modifier button (active LOW — sits at +12V at rest)
+    modifier_held = (modifier_pin.value() == 0)
     if modifier_held:
         col_roots = (config.COL_TO_ROOT_SHARP if _modifier_mode == 'sharp'
                      else config.COL_TO_ROOT_FLAT)
@@ -163,13 +170,12 @@ while True:
         row_pins, col_pins,
         col_roots, config.ROW_TO_TYPE
     )
-    result = resolve_chord(pressed)
 
     # Drive AK (Any Key Down) output
-    if ak_pin is not None:
-        ak_pin.value(1 if pressed else 0)
+    ak_pin.value(1 if pressed else 0)
 
     # Memory
+    result = resolve_chord(pressed)
     if result is not None:
         last_chord = result
     elif not memory_active:
@@ -184,7 +190,7 @@ while True:
         root_note, third_note, fifth_note, seventh_note, default_mo = \
             CHORD_VOICING[chord_type](root)
 
-        # 7th Select pin — ground when 7th chord active
+        # 7th Select pin
         has_7th = seventh_note is not None
         sel7_pin.value(0 if has_7th else 1)
 
@@ -217,13 +223,12 @@ while True:
                 active_midi = new_midi
 
     else:
-        # Silence all outputs
         silence(sm_root)
         silence(sm_3rd)
         silence(sm_5th)
         silence(sm_7th)
         silence(sm_mo)
-        sel7_pin.value(1)   # 7th off
+        sel7_pin.value(1)
         last_mo = None
 
         if midi and active_midi is not None:
@@ -231,26 +236,3 @@ while True:
             active_midi = None
 
     utime.sleep_ms(5)
-
-
-# =============================================================================
-# MIDI helpers
-# =============================================================================
-
-def _midi_chord_on(voices):
-    root_n, third_n, fifth_n, seventh_n, mo_n = voices
-    midi.note_on(midi._midi(mo_n,    2), 90)   # bass register
-    midi.note_on(midi._midi(root_n,  4), 100)
-    midi.note_on(midi._midi(third_n, 4), 95)
-    midi.note_on(midi._midi(fifth_n, 4), 95)
-    if seventh_n is not None:
-        midi.note_on(midi._midi(seventh_n, 4), 90)
-
-def _midi_chord_off(voices):
-    root_n, third_n, fifth_n, seventh_n, mo_n = voices
-    midi.note_off(midi._midi(mo_n,    2))
-    midi.note_off(midi._midi(root_n,  4))
-    midi.note_off(midi._midi(third_n, 4))
-    midi.note_off(midi._midi(fifth_n, 4))
-    if seventh_n is not None:
-        midi.note_off(midi._midi(seventh_n, 4))

@@ -72,6 +72,12 @@ matrix uses PULL_UP with rows driven LOW instead — already handled in firmware
 
 ### GPIO map (proposed, unverified)
 
+The key matrix is 3 rows × 6 column pins. Three of those column pins are
+shared between two roots each (tritone pairs), giving 9 accessible roots
+from 6 pins. The frequency input pins (13–24) are dedicated M083A
+connections and are not used as matrix columns — they are left unconnected
+on the daughterboard.
+
 | GPIO | Function | AY-5-1317A pin |
 |---|---|---|
 | 0 | ROOT output → CD4520 #1 clock A | 31 |
@@ -80,35 +86,32 @@ matrix uses PULL_UP with rows driven LOW instead — already handled in firmware
 | 3 | 7TH output  → CD4520 #2 clock B | 32 (silent on non-7th chords) |
 | 4 | MO output (auto-bass) | 34 |
 | 5 | 7th Select drive (LOW = 7th active) | 33 |
-| 6 | Row drive: Major | 11 + 12 (tie both pads together) |
-| 7 | Row drive: Minor | 9 + 10 |
-| 8 | Row drive: Seventh | 7 + 8 |
-| 9 | Col sense: C  | 24 |
-| 10 | Col sense: C# | 23 |
-| 11 | Col sense: D  | 22 |
-| 12 | Col sense: D# | 21 |
-| 13 | Col sense: E  | 20 |
-| 14 | Col sense: F  | 19 |
-| 15 | Col sense: F# | 18 (NC — no button in OM-27) |
-| 16 | Col sense: G  | 17 |
-| 17 | Col sense: G# | 16 (NC — no button in OM-27) |
-| 18 | Col sense: A  | 15 |
-| 19 | Col sense: A# | 14 (NC — no button in OM-27) |
-| 20 | Col sense: B / MIDI TX | 13 / UART1 alt TX |
-| 21 | Power enable | — |
-| 22 | Any Key Down drive | 30 |
-| 23 | Memory switch input | 35 |
-| 24 | Modifier button input (was reset) | 5 |
-| 25 | Bass select B3 from AY-5-1315 | 25 (needs 68k+33k level shift) |
-| 26 | Bass select B2 from AY-5-1315 | 26 (needs 68k+33k level shift) |
-| 27 | Bass select B1 from AY-5-1315 | 27 (needs 68k+33k level shift) |
-| 28 | JP1: flat/sharp select | — |
-| 29 | JP2: Barry Harris mode | — |
+| 6 | Row drive: Major | 11 + 12 (tie both pads) |
+| 7 | Row drive: Minor | 9 + 10 (tie both pads) |
+| 8 | Row drive: Seventh | 7 + 8 (tie both pads) |
+| 9 | Col sense: Eb / A | 39 |
+| 10 | Col sense: Bb / E | 40 |
+| 11 | Col sense: F  / B | 3  |
+| 12 | Col sense: C      | 36 |
+| 13 | Col sense: G      | 37 |
+| 14 | Col sense: D      | 38 |
+| 15 | MIDI TX (optional) | — (UART1, verify pin capability) |
+| 16 | Power enable | — |
+| 17 | Any Key Down drive | 30 |
+| 18 | Memory switch input | 35 |
+| 19 | Modifier button input (was reset) | 5 |
+| 20 | Bass select B3 from AY-5-1315 | 25 (needs 68k+33k level shift) |
+| 21 | Bass select B2 from AY-5-1315 | 26 (needs 68k+33k level shift) |
+| 22 | Bass select B1 from AY-5-1315 | 27 (needs 68k+33k level shift) |
+| 23 | JP1: flat/sharp select | — |
+| 24 | JP2: Barry Harris mode | — |
+| 25–29 | Free for future use | — |
 
-AY-5-1317A pins 1 (VSS), 2 (VDD), 3 (C1), 4 (OSC), 6 (m Sel), 36–40
-are not connected to the RP2350 — VSS and VDD go to the supply rails,
-OSC is unused (no external clock needed), and the others need PCB trace
-investigation to determine if they connect to anything downstream.
+AY-5-1317A pins 1 (VSS) and 2 (VDD) go to the supply rails (+12V and GND
+respectively). Pin 4 (OSC) is left unconnected — no external clock needed.
+Pins 13–24 (frequency inputs from M083A) are left unconnected — we generate
+frequencies internally. Pins 6 (m Sel) and 36–40 (column pins) connect to
+the key matrix as shown above. Pin 30 (AK) is driven by the RP2350.
 
 ### CD4520 adapter boards
 

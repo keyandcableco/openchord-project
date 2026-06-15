@@ -66,10 +66,15 @@ def scan_matrix(row_pins, col_pins, col_to_root, row_to_type, settle_us=10):
 
     Workaround for RP2350 Errata 9 (PULL_DOWN unreliable on floating pins).
 
+    col_to_root may contain either a single note index (int) or a list of
+    note indices for shared column pins (e.g. the OM-27 wires Eb and A to
+    the same column pin). When a shared column fires, all roots are returned
+    and chord resolution picks the right one via priority logic.
+
     Args:
         row_pins:    list of Pin objects (outputs, idle HIGH)
         col_pins:    list of Pin objects (inputs, PULL_UP)
-        col_to_root: list mapping column index -> note index (0-11)
+        col_to_root: list of note index (int) or list of note indices per col
         row_to_type: list mapping row index -> chord type string
         settle_us:   microseconds to wait after driving row low
 
@@ -78,12 +83,16 @@ def scan_matrix(row_pins, col_pins, col_to_root, row_to_type, settle_us=10):
     """
     pressed = []
     for ri, row in enumerate(row_pins):
-        row.value(0)                    # drive row LOW
+        row.value(0)
         utime.sleep_us(settle_us)
         for ci, col in enumerate(col_pins):
-            if not col.value():         # column pulled LOW = button pressed
-                pressed.append((col_to_root[ci], row_to_type[ri]))
-        row.value(1)                    # restore row HIGH
+            if not col.value():
+                roots = col_to_root[ci]
+                if isinstance(roots, int):
+                    roots = [roots]
+                for root in roots:
+                    pressed.append((root, row_to_type[ri]))
+        row.value(1)
     return pressed
 
 
