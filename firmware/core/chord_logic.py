@@ -37,22 +37,26 @@ def init_matrix(row_pins, col_pins):
     Args:
         row_pins: list of GPIO numbers for row drive outputs
         col_pins: list of GPIO numbers for column sense inputs
-                  (these are the AY-5-1317A frequency input pins 13-24,
-                   which double as matrix columns)
 
     Returns:
         (row_pin_objects, col_pin_objects)
 
-    NOTE — RP2350 Errata 9:
-        GPIO pins configured with PULL_DOWN can latch at ~2.1V when floating,
-        due to an analogue design error in the RP2350 GPIO pads. This makes
-        PULL_DOWN unreliable for column sense pins.
-        Workaround: use PULL_UP and drive rows LOW instead of HIGH.
-        A button press connects row (LOW) to column, pulling column LOW.
-        scan_matrix() detects column going LOW (not HIGH) as a press.
+    AY-5-1317A matrix convention (from datasheet):
+        Row pins 7-12 are OUTPUTS on the original IC — driven HIGH to scan.
+        Column pins 3, 36-40 are INPUTS — pulled LOW by external resistors
+        on the OM-27 PCB (33kΩ to GND per column), pulled HIGH when a
+        button connects column to the driven row.
+
+        So: drive rows HIGH, sense columns going HIGH on press.
+
+    RP2350 Errata 9 note:
+        Internal PULL_DOWN is unreliable on floating pins. However, the
+        OM-27 PCB already has 33kΩ external pulldown resistors on the
+        column lines. These dominate over any internal pull, so we use
+        Pin.IN with no internal pull — the external resistors handle it.
     """
-    rows = [Pin(p, Pin.OUT, value=1) for p in row_pins]  # idle HIGH
-    cols = [Pin(p, Pin.IN, Pin.PULL_UP) for p in col_pins]
+    rows = [Pin(p, Pin.OUT, value=0) for p in row_pins]  # idle LOW
+    cols = [Pin(p, Pin.IN) for p in col_pins]             # external 33k pulldowns on PCB
     return rows, cols
 
 
@@ -60,11 +64,9 @@ def scan_matrix(row_pins, col_pins, col_to_root, row_to_type, settle_us=10):
     """
     Scan key matrix and return list of (root, chord_type) for pressed buttons.
 
-    Drives each row LOW in turn (PULL_UP on columns, idle HIGH).
-    A button press connects the driven row (LOW) to a column, pulling it LOW.
-    Detects column going LOW as a press.
-
-    Workaround for RP2350 Errata 9 (PULL_DOWN unreliable on floating pins).
+    Drives each row HIGH in turn. A button press connects the driven row
+    to a column, pulling it HIGH against the 33kΩ PCB pulldown resistors.
+    Detects column going HIGH as a press.
 
     col_to_root may contain either a single note index (int) or a list of
     note indices for shared column pins (e.g. the OM-27 wires Eb and A to
@@ -72,27 +74,27 @@ def scan_matrix(row_pins, col_pins, col_to_root, row_to_type, settle_us=10):
     and chord resolution picks the right one via priority logic.
 
     Args:
-        row_pins:    list of Pin objects (outputs, idle HIGH)
-        col_pins:    list of Pin objects (inputs, PULL_UP)
+        row_pins:    list of Pin objects (outputs, idle LOW)
+        col_pins:    list of Pin objects (inputs, no internal pull)
         col_to_root: list of note index (int) or list of note indices per col
         row_to_type: list mapping row index -> chord type string
-        settle_us:   microseconds to wait after driving row low
+        settle_us:   microseconds to wait after driving row high
 
     Returns:
         list of (root_note_index, chord_type_string)
     """
     pressed = []
     for ri, row in enumerate(row_pins):
-        row.value(0)
+        row.value(1)                    # drive row HIGH
         utime.sleep_us(settle_us)
         for ci, col in enumerate(col_pins):
-            if not col.value():
+            if col.value():             # column pulled HIGH = button pressed
                 roots = col_to_root[ci]
                 if isinstance(roots, int):
                     roots = [roots]
                 for root in roots:
                     pressed.append((root, row_to_type[ri]))
-        row.value(1)
+        row.value(0)                    # restore row LOW
     return pressed
 
 
@@ -101,7 +103,20 @@ def scan_matrix(row_pins, col_pins, col_to_root, row_to_type, settle_us=10):
 # =============================================================================
 
 def _resolve_single_root(types):
-    """Resolve a set of chord types pressed on one root to a chord name."""
+    """
+    Resolve a set of chord types pressed on one root to a chord name.
+
+    Priority (all three buttons always wins):
+      maj + min + dom7  -> aug   (all three buttons)
+      min + dom7        -> min7
+      maj + dom7        -> maj7
+      maj + min         -> dim   (in BH mode this becomes full dim7 via voicing)
+      single button     -> maj / min / dom7
+
+    Note: 'aug' is always augmented regardless of Barry Harris mode.
+    The dim voicing changes in BH mode but the resolution name stays 'dim'
+    so the voicing table handles the distinction cleanly.
+    """
     if 'maj' in types and 'min' in types and 'dom7' in types:
         return 'aug'
     if 'min' in types and 'dom7' in types:
@@ -187,9 +202,9 @@ def build_voicings(barry_harris=False):
     default_mo_note is the MO output when B1/B2/B3 = 0,0,0 (hold) on boot.
     """
     if barry_harris:
-        maj_v = lambda r: _voice(r, r+4, r+9,  None,  r)  # maj6
-        min_v = lambda r: _voice(r, r+3, r+9,  None,  r)  # min6
-        dim_v = lambda r: _voice(r, r+3, r+6,  r+9,   r)  # full dim7
+        maj_v = lambda r: _voice(r, r+4, r+9,  None,  r)  # maj6: 6th on 5th-slot
+        min_v = lambda r: _voice(r, r+3, r+9,  None,  r)  # min6: 6th on 5th-slot
+        dim_v = lambda r: _voice(r, r+3, r+6,  r+9,   r)  # full dim7 (maj+min combo)
     else:
         maj_v = lambda r: _voice(r, r+4, r+7,  None,  r)
         min_v = lambda r: _voice(r, r+3, r+7,  None,  r)
@@ -202,7 +217,7 @@ def build_voicings(barry_harris=False):
         'min7': lambda r: _voice(r, r+3, r+7,  r+10,  r),
         'maj7': lambda r: _voice(r, r+4, r+7,  r+11,  r),
         'dim':  dim_v,
-        'aug':  lambda r: _voice(r, r+4, r+8,  None,  r),
+        'aug':  lambda r: _voice(r, r+4, r+8,  None,  r),  # augmented unchanged in BH mode
         'sus4': lambda r: _voice(r, r+5, r+7,  None,  r),
         'sus2': lambda r: _voice(r, r+2, r+7,  None,  r),
     }

@@ -86,7 +86,7 @@ GPIO_COL_G   = 13   # AY pin 37  (G)
 GPIO_COL_D   = 14   # AY pin 38  (D)
 
 # Special inputs / outputs
-GPIO_MIDI_TX = 15   # UART1 TX (optional) — verify pin capability on RP2350-Zero
+GPIO_MIDI_TX = None   # UART1 TX (optional) — verify pin capability on RP2350-Zero
 GPIO_POWER   = 16   # Power enable out
 GPIO_AK      = 17   # Any Key Down drive → AY pin 30
                     # Goes HIGH when any chord button is pressed.

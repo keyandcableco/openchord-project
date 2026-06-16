@@ -35,7 +35,7 @@ Currently:
 | AY-5-1317A | Chord logic brain | RP2350-Zero sits in this socket |
 | M083A | Top-octave generator | Frequencies generated in PIO from internal clock |
 | 4069 | RC clock oscillator for M083A | No longer needed; its 78L05 power supply gets stolen for VBUS |
-| 4001 | NOR gate for bass routing | Logic moved into firmware |
+| 4001 | NOR gate routing 5th or 7th to bass M747 depending on chord type | Bypassed — firmware outputs the correct note directly |
 | M747 ×2 | Octave dividers | Replaced by CD4520 adapter boards (passive pin translation) — **unverified** |
 
 The AY-5-1315 (rhythm chip), 4011 (percussion), and all downstream audio circuitry are left alone.
