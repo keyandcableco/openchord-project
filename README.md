@@ -168,5 +168,10 @@ Filip Kindt's RP2040 TOG replacement for the Hammond X-5 at [cctv.fm](https://ww
 
 ## License
 
-Firmware: MIT  
-Hardware designs: CERN-OHL-S-2.0
+Copyright © 2026 Greg Miller / The Key & Cable Company.
+
+The firmware is licensed under the [MIT License](LICENSE).
+
+The hardware designs and their documentation in `docs/` are licensed under the [CERN Open Hardware Licence Version 2 – Strongly Reciprocal (CERN-OHL-S-2.0)](LICENSE-HARDWARE). You can make, modify, sell and share hardware from them. If you share a modified design, or ship hardware made from one, you have to publish your design files under the same licence.
+
+Source location: <https://github.com/keyandcableco/openchord-project>
