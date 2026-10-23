@@ -189,7 +189,9 @@ def resolve_chord(pressed):
 # =============================================================================
 
 def _voice(r, t, fv, sev, mo):
-    return (r%12, t%12, fv%12, sev, mo%12 if mo is not None else None)
+    # every voice is a pitch class 0-11, the key of note_counters; the 7th was left unreduced
+    return (r%12, t%12, fv%12, sev%12 if sev is not None else None,
+            mo%12 if mo is not None else None)
 
 def build_voicings(barry_harris=False):
     """

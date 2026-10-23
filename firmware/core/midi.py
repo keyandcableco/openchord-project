@@ -67,11 +67,16 @@ class MidiOut:
         self.note_off(self._midi(third, chord_octave))
         self.note_off(self._midi(fifth, chord_octave))
 
-    def counter_to_midi(self, counter, pio_clk=125_000_000):
-        """Convert a PIO counter value to the nearest MIDI note number."""
-        if counter >= 0x7FFFFFFF:
+    def counter_to_midi(self, counter, pio_clk=None):
+        """
+        Convert a freq_gen counter value to the nearest MIDI note number
+        (None for SILENT). Uses freq_gen's own inverse formula, so it always
+        matches the PIO program. pio_clk defaults to freq_gen.PIO_CLK.
+        """
+        from freq_gen import counter_to_freq, SILENT
+        if counter == SILENT:
             return None
-        freq   = pio_clk / (4.0 * (counter + 1))
+        freq   = counter_to_freq(counter, pio_clk)
         midi_n = round(69 + 12 * math.log2(freq / 440.0))
         return midi_n if 0 <= midi_n <= 127 else None
 

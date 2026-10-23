@@ -18,6 +18,7 @@ Usage:
 """
 
 from machine import ADC, Pin
+import math
 from freq_gen import pio_counter
 
 # Note indices
@@ -94,13 +95,18 @@ def note_to_midi(note_index, octave=4):
 
 
 def print_frequency_table(a4=440.0, octave=7):
-    """Print a human-readable frequency table for verification."""
-    from freq_gen import PIO_CLK
-    print("Frequency table — octave {}, A4={:.2f} Hz".format(octave, a4))
+    """
+    Print a human-readable frequency table for verification.
+    'actual' is what the PIO program produces for that counter
+    (freq_gen.counter_to_freq), so a scope or tuner on the pin should agree.
+    """
+    from freq_gen import PIO_CLK, counter_to_freq
+    print("Frequency table — octave {}, A4={:.2f} Hz, PIO clock {} Hz".format(
+        octave, a4, PIO_CLK))
     for note in range(12):
         freq    = note_freq(note, octave, a4)
         counter = pio_counter(freq)
-        actual  = PIO_CLK / (4.0 * (counter + 1))
-        error   = (actual - freq) / freq * 1200  # cents
+        actual  = counter_to_freq(counter)
+        error   = 1200 * math.log(actual / freq) / math.log(2)  # cents
         print("  {:3s}{}: {:8.3f} Hz  counter={:5d}  actual={:.3f} Hz  err={:+.2f}¢".format(
             NOTE_NAMES[note], octave, freq, counter, actual, error))
