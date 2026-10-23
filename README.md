@@ -183,6 +183,11 @@ This is theoretically straightforward but hasn't been built or tested.
 The pin map above is unchanged. These need deciding before a board is laid
 out.
 
+- **MicroPython 1.26.0 or newer.** Releases before 1.26.0 never load programs
+  into the RP2350's third PIO block (MicroPython issue #17509), so anything on
+  state machines 8-11 silently does nothing: here, the WS2812 status LED on
+  state machine 11 in the OM-27 firmware. Use 1.26.0 or newer.
+
 - **Two inputs may see +12V.** `config.py` says AY pin 5 (GPIO 19, the
   modifier button) sits at +12V at rest, and AY pin 35 (GPIO 18, the memory
   switch) is active HIGH, which on this chip means +12V. Only B1–B3 have a
